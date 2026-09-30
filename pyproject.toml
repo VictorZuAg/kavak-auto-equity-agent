@@ -1,0 +1,28 @@
+[project]
+name = "kavak-auto-equity-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Victor Zuñiga", email = "vick18v@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.9.0",
+    "pydantic>=2.13.5",
+    "rapidfuzz>=3.14.6",
+    "rich>=15.0.0",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+kavak-auto-equity-agent = "kavak_auto_equity_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
