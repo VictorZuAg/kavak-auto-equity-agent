@@ -43,45 +43,38 @@ class DocumentExtractorPort(Protocol):
     def extract(self, document_type: DocumentType, content: bytes) -> dict[str, ExtractedField]: ...
 
 
-class ConcurrencyConflictError(Exception):
-    """Raised by `CaseRepositoryPort.save` when the case was modified by
-    someone else since it was read (section 10: optimistic locking)."""
-
-    def __init__(self, case_id: str, expected_version: int) -> None:
-        self.case_id = case_id
-        self.expected_version = expected_version
-        super().__init__(f"Case {case_id!r} was modified concurrently (expected version {expected_version})")
-
-
 @runtime_checkable
 class CaseRepositoryPort(Protocol):
     """Case persistence with optimistic locking (section 10). `save` writes
-    conditioned on `case.version`, bumps it and refreshes `updated_at` on
-    success, and raises `ConcurrencyConflictError` on a stale write instead of
+    conditioned on `expected_version`, bumps it and refreshes `updated_at` on
+    success, and raises `ConcurrencyError` on a stale write instead of
     retrying blindly — the caller must reload and re-check preconditions."""
-
-    def get(self, case_id: str) -> Case | None: ...
 
     def create(self, case: Case) -> Case: ...
 
-    def save(self, case: Case) -> Case: ...
+    def get(self, case_id: str) -> Case: ...  # raises CaseNotFoundError if missing
+
+    def save(self, case: Case, expected_version: int) -> Case: ...  # raises ConcurrencyError on mismatch
 
 
-class AuditLogEntry(BaseModel):
+class AuditEntry(BaseModel):
     """One row of the append-only audit log (section 5). Every tool call,
-    successful or rejected, produces exactly one of these."""
+    successful or rejected, produces exactly one of these. `status_before`/
+    `status_after` can be unknown (`None`) when the call is rejected before
+    the case is even loaded, e.g. a permission check on step 2 of the
+    registry pipeline, which runs before step 4 loads the case."""
 
     timestamp: datetime
     case_id: str
-    actor: str
+    actor_id: str
     role: str
     tool: str
     input: dict[str, Any]
     output: dict[str, Any] | None = None
     error: str | None = None
-    idempotency_key: str
-    status_before: State
-    status_after: State
+    idempotency_key: str | None = None
+    status_before: State | None = None
+    status_after: State | None = None
     policy_version: str
     prompt_version: str | None = None
     model: str | None = None
@@ -91,11 +84,14 @@ class AuditLogEntry(BaseModel):
 class AuditLogPort(Protocol):
     """Append-only by contract (section 5): no update or delete method is
     exposed. `list_for_case` backs the traceability described in section 8.3
-    (reconstruct any case step by step) and the advisor's case history (section 6)."""
+    (reconstruct any case step by step) and the advisor's case history (section 6);
+    `list_all` backs the metrics computed in `metrics.py` (section 8)."""
 
-    def append(self, entry: AuditLogEntry) -> None: ...
+    def record(self, entry: AuditEntry) -> None: ...
 
-    def list_for_case(self, case_id: str) -> list[AuditLogEntry]: ...
+    def list_for_case(self, case_id: str) -> list[AuditEntry]: ...
+
+    def list_all(self) -> list[AuditEntry]: ...
 
 
 class LLMMessage(BaseModel):
